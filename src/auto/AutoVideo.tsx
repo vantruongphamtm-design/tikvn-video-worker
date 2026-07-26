@@ -475,15 +475,13 @@ const SceneView: React.FC<{ spec: SceneSpec; brand?: string; index: number }> = 
                 whiteSpace: "pre-line",
                 fontWeight: 900,
                 fontSize: 108,
-                // lineHeight rong + padding tren de dau thanh IN HOA chong cao (Ẩ/Ế/Ể/Ợ)
-                // KHONG bi cat dinh khi dung background-clip:text.
-                lineHeight: 1.26,
-                paddingTop: "0.16em",
-                backgroundImage: `linear-gradient(180deg, #ffffff 0%, ${acc} 100%)`,
-                WebkitBackgroundClip: "text",
-                backgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                filter: "drop-shadow(0 10px 30px rgba(0,0,0,.55))",
+                // lineHeight rong de dau thanh IN HOA chong cao (Ẩ/Ế/Ể/Ợ) khong bi cat.
+                // BO background-clip:text + filter (gay bug Chromium cat dinh chu tren nen sang).
+                // Dung chu trang dac + bong dam + quang accent -> ro tren moi nen, khong cat dau.
+                lineHeight: 1.32,
+                paddingTop: "0.22em",
+                color: "#ffffff",
+                textShadow: `0 3px 18px rgba(0,0,0,.9), 0 1px 4px rgba(0,0,0,.95), 0 0 44px ${acc}80`,
               }}
             >
               {spec.title}
