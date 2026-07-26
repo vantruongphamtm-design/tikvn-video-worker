@@ -1,0 +1,116 @@
+// TTS giong Viet cho tung caption. Tra ve audio + do dai (giay) de gan sec moi canh
+// (karaoke khop giong). Co MOCK fallback (audio im lang uoc do dai) de test khong can endpoint.
+import { spawn } from "node:child_process";
+import { writeFile, mkdir } from "node:fs/promises";
+import path from "node:path";
+
+const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
+const FFPROBE = process.env.FFPROBE_PATH || "ffprobe";
+
+function run(cmd, args) {
+  return new Promise((resolve, reject) => {
+    const p = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    let err = "";
+    p.stdout.on("data", (d) => (out += d));
+    p.stderr.on("data", (d) => (err += d));
+    p.on("close", (code) => (code === 0 ? resolve(out) : reject(new Error(`${cmd} exit ${code}: ${err.slice(-400)}`))));
+  });
+}
+
+async function durationOf(file) {
+  const out = await run(FFPROBE, ["-v", "error", "-show_entries", "format=duration", "-of", "default=nk=1:nw=1", file]);
+  const d = parseFloat(out.trim());
+  return Number.isFinite(d) ? d : 3;
+}
+
+// Goi OmniVoice (RunPod). Contract: input {text, language, ref_audio_url?|instruct?, output_format},
+// output {audio_base64|audio_url, duration_seconds}. Tra ve {ok, sec} hoac false neu chua co key.
+// voice: "" -> auto (giong mac dinh); URL -> clone (ref_audio_url); "instruct:..." -> voice_design.
+async function synthReal(text, voice, outFile) {
+  const endpoint = process.env.RUNPOD_TTS_ENDPOINT_ID || "h2t1xhru34n54n";
+  const apiKey = process.env.RUNPOD_API_KEY;
+  if (!apiKey) return false;
+
+  const input = { text, language: "Vietnamese", output_format: "mp3" };
+  if (voice && /^https?:/.test(voice)) input.ref_audio_url = voice;
+  else if (voice && voice.startsWith("instruct:")) input.instruct = voice.slice(9).trim();
+  if (process.env.OMNIVOICE_REF_TEXT) input.ref_text = process.env.OMNIVOICE_REF_TEXT;
+
+  const res = await fetch(`https://api.runpod.ai/v2/${endpoint}/runsync`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ input }),
+  });
+  if (!res.ok) throw new Error(`TTS loi (${res.status}): ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  if (data.status && data.status !== "COMPLETED") throw new Error(`TTS status ${data.status}`);
+  const o = data?.output || {};
+  const sec = Number(o.duration_seconds) > 0 ? Number(o.duration_seconds) : null;
+  if (o.audio_base64) {
+    await writeFile(outFile, Buffer.from(o.audio_base64, "base64"));
+    return { ok: true, sec };
+  }
+  if (o.audio_url) {
+    const a = await fetch(o.audio_url);
+    await writeFile(outFile, Buffer.from(await a.arrayBuffer()));
+    return { ok: true, sec };
+  }
+  throw new Error("OmniVoice khong tra audio (kiem tra input/endpoint)");
+}
+
+// Mock: audio im lang, do dai uoc theo so tu (2.5 tu/giay), toi thieu 1.8s.
+async function synthMock(text, outFile) {
+  const words = String(text).trim().split(/\s+/).filter(Boolean).length;
+  const sec = Math.max(1.8, Math.round((words / 2.5) * 10) / 10);
+  await run(FFMPEG, ["-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", String(sec), "-q:a", "9", outFile]);
+  return sec;
+}
+
+/**
+ * scenes: [{caption,...}]. Sinh audio moi canh, gan sec, ghep thanh 1 file.
+ * Tra ve { audioFile, scenes (da co sec) }.
+ */
+export async function synthAll(scenes, voice, workDir, targetSec) {
+  await mkdir(workDir, { recursive: true });
+  const files = [];
+  const outScenes = [];
+  for (let i = 0; i < scenes.length; i++) {
+    const f = path.join(workDir, `seg-${i}.mp3`);
+    const speak = scenes[i].narration || scenes[i].caption || " ";
+    let sec;
+    try {
+      const r = await synthReal(speak, voice, f);
+      if (r && r.ok) sec = r.sec ?? (await durationOf(f));
+      else sec = await synthMock(speak, f);
+    } catch (e) {
+      sec = await synthMock(speak, f);
+    }
+    files.push(f);
+    outScenes.push({ ...scenes[i], sec: Math.max(1.5, sec) });
+  }
+  // Chuan hoa tong ve targetSec MA KHONG PHA SYNC: chen lang CHIA DEU moi canh
+  // (moi canh = audio cua no + 1 chut lang -> phu de van khop giong, khong co canh chet).
+  if (targetSec) {
+    const total = outScenes.reduce((a, s) => a + s.sec, 0);
+    const deficit = targetSec - total;
+    if (deficit > 0.1) {
+      const per = Math.round((deficit / outScenes.length) * 100) / 100;
+      const gapFile = path.join(workDir, "gap.mp3");
+      await run(FFMPEG, ["-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", String(per), "-q:a", "9", gapFile]);
+      const withGaps = [];
+      files.forEach((f, i) => {
+        withGaps.push(f, gapFile);
+        outScenes[i].sec += per;
+      });
+      files.length = 0;
+      files.push(...withGaps);
+    }
+  }
+  // Ghep audio: concat demuxer.
+  const listFile = path.join(workDir, "list.txt");
+  await writeFile(listFile, files.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n"));
+  const audioFile = path.join(workDir, "voice.mp3");
+  await run(FFMPEG, ["-y", "-f", "concat", "-safe", "0", "-i", listFile, "-c:a", "libmp3lame", "-q:a", "4", audioFile]);
+  return { audioFile, scenes: outScenes };
+}

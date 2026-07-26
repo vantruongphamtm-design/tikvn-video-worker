@@ -1,0 +1,9 @@
+node_modules
+out
+public/voice-*.mp3
+plan-*.json
+.cache
+node_modules/.cache
+.git
+*.mp4
+.DS_Store
