@@ -71,11 +71,15 @@ async function synthMock(text, outFile) {
  * scenes: [{caption,...}]. Sinh audio moi canh, gan sec, ghep thanh 1 file.
  * Tra ve { audioFile, scenes (da co sec) }.
  */
+// So request TTS chay song song (khop workersMax cua endpoint TTS = 4). Chinh qua env.
+const TTS_CONCURRENCY = Number(process.env.TTS_CONCURRENCY) || 4;
+
 export async function synthAll(scenes, voice, workDir, targetSec) {
   await mkdir(workDir, { recursive: true });
-  const files = [];
-  const outScenes = [];
-  for (let i = 0; i < scenes.length; i++) {
+  // TTS moi canh SONG SONG (pool TTS_CONCURRENCY) thay vi tuan tu -> nhanh hon nhieu.
+  // Ket qua giu dung thu tu canh (ghi vao secs[i]).
+  const secs = new Array(scenes.length);
+  async function one(i) {
     const f = path.join(workDir, `seg-${i}.mp3`);
     const speak = scenes[i].narration || scenes[i].caption || " ";
     let sec;
@@ -86,8 +90,23 @@ export async function synthAll(scenes, voice, workDir, targetSec) {
     } catch (e) {
       sec = await synthMock(speak, f);
     }
-    files.push(f);
-    outScenes.push({ ...scenes[i], sec: Math.max(1.5, sec) });
+    secs[i] = Math.max(1.5, sec);
+  }
+  // Pool: chay toi da TTS_CONCURRENCY task cung luc.
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(TTS_CONCURRENCY, scenes.length) }, async () => {
+      while (next < scenes.length) {
+        const i = next++;
+        await one(i);
+      }
+    })
+  );
+  const files = [];
+  const outScenes = [];
+  for (let i = 0; i < scenes.length; i++) {
+    files.push(path.join(workDir, `seg-${i}.mp3`));
+    outScenes.push({ ...scenes[i], sec: secs[i] });
   }
   // Chuan hoa tong ve targetSec MA KHONG PHA SYNC: chen lang CHIA DEU moi canh
   // (moi canh = audio cua no + 1 chut lang -> phu de van khop giong, khong co canh chet).
