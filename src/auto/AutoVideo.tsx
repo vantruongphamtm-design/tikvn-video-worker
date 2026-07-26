@@ -474,8 +474,11 @@ const SceneView: React.FC<{ spec: SceneSpec; brand?: string; index: number }> = 
               style={{
                 whiteSpace: "pre-line",
                 fontWeight: 900,
-                fontSize: 112,
-                lineHeight: 1.04,
+                fontSize: 108,
+                // lineHeight rong + padding tren de dau thanh IN HOA chong cao (Ẩ/Ế/Ể/Ợ)
+                // KHONG bi cat dinh khi dung background-clip:text.
+                lineHeight: 1.26,
+                paddingTop: "0.16em",
                 backgroundImage: `linear-gradient(180deg, #ffffff 0%, ${acc} 100%)`,
                 WebkitBackgroundClip: "text",
                 backgroundClip: "text",
