@@ -25,8 +25,11 @@ COPY . .
 # Tai san Chrome Headless Shell vao image luc build (khong tai luc chay)
 RUN npx remotion browser ensure
 
+# Model manh hon cho A3 scene-plan (flash-lite qua yeu -> canh trong, thieu title/component).
+# Template RunPod khong set OPENROUTER_VIDEO_MODEL nen ENV nay se duoc dung.
 ENV RENDER_CONCURRENCY=2 \
-    NODE_ENV=production
+    NODE_ENV=production \
+    OPENROUTER_VIDEO_MODEL=google/gemini-2.5-flash
 
 # RunPod goi handler.py -> node worker/pipeline.mjs
 CMD ["python3", "worker/handler.py"]

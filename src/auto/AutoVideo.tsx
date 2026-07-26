@@ -201,10 +201,17 @@ const Caption: React.FC<{ text: string; acc: string }> = ({ text, acc }) => {
               key={gi}
               style={{
                 display: "inline-block",
-                marginRight: "0.3em",
+                // Padding hai ben (khong dung margin) de khoang cach luon giu duoc,
+                // khong bi chu IN HOA/dam de dinh vao nhau.
+                padding: "0 0.14em",
                 color: isCur ? acc : "#fff",
                 fontWeight: kw ? 900 : 800,
-                transform: isCur ? "scale(1.12)" : "scale(1)",
+                // Nhan chu dang doc bang glow + nhich len, KHONG phong to ngang
+                // (scale ngang lam chu rong de len khoang cach -> dinh chu).
+                transform: isCur ? "translateY(-3px)" : "none",
+                textShadow: isCur
+                  ? `0 0 22px ${acc}, 0 0 8px ${acc}, 0 4px 20px rgba(0,0,0,.95)`
+                  : undefined,
               }}
             >
               {w}
