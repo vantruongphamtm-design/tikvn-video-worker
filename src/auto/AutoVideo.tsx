@@ -645,6 +645,10 @@ const SceneView: React.FC<{ spec: SceneSpec; brand?: string; index: number; t: T
   const onImg = !!spec.image;
   const ink = onImg ? "#ffffff" : t.ink;       // chu tren anh luon trang cho de doc
   const isLight = onImg ? false : t.light;
+  // Tren ANH: ep component dung chu TRANG + accent tuoi + panel toi trong suot (khong bao gio chu den chim tren anh toi).
+  const ct: Theme = onImg
+    ? { ...t, ink: "#ffffff", sub: "#e8edf3", panel: "rgba(8,12,20,.52)", pborder: "rgba(255,255,255,.24)", light: false }
+    : t;
   const bgScale = interpolate(frame, [0, durationInFrames], [1.05, 1.16], { extrapolateRight: "clamp" });
 
   return (
@@ -669,7 +673,7 @@ const SceneView: React.FC<{ spec: SceneSpec; brand?: string; index: number; t: T
         {spec.component ? (
           <>
             {spec.kicker ? <Kicker text={spec.kicker} acc={acc} panel={t.panel} sz={28} /> : null}
-            <CompView spec={spec.component} acc={acc} t={t} />
+            <CompView spec={spec.component} acc={acc} t={ct} />
           </>
         ) : (
           <div style={motionStyle(spec.motion, frame)}>
