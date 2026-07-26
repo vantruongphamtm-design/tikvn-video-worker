@@ -106,25 +106,33 @@ export async function synthAll(scenes, voice, workDir, targetSec) {
   const outScenes = [];
   for (let i = 0; i < scenes.length; i++) {
     files.push(path.join(workDir, `seg-${i}.mp3`));
-    outScenes.push({ ...scenes[i], sec: secs[i] });
+    // speakSec = do dai AUDIO THAT (truoc khi chen lang) -> karaoke chay khop giong, khong let.
+    outScenes.push({ ...scenes[i], sec: secs[i], speakSec: secs[i] });
   }
-  // Chuan hoa tong ve targetSec MA KHONG PHA SYNC: chen lang CHIA DEU moi canh
-  // (moi canh = audio cua no + 1 chut lang -> phu de van khop giong, khong co canh chet).
+  // KHONG ep du targetSec (de video dai TU NHIEN theo giong doc, vd chon 60s -> 50-60s la OK).
+  // Chi chen 1 chut LANG NGHI giua cac canh cho de tho + karaoke kip chuyen canh.
+  // Neu tong qua ngan so voi muc tieu (LLM viet thieu) thi nghi dai hon 1 chut (co tran), khong ep het.
+  const GAP_MIN = 0.35;
+  let gap = GAP_MIN;
   if (targetSec) {
-    const total = outScenes.reduce((a, s) => a + s.sec, 0);
-    const deficit = targetSec - total;
-    if (deficit > 0.1) {
-      const per = Math.round((deficit / outScenes.length) * 100) / 100;
-      const gapFile = path.join(workDir, "gap.mp3");
-      await run(FFMPEG, ["-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", String(per), "-q:a", "9", gapFile]);
-      const withGaps = [];
-      files.forEach((f, i) => {
-        withGaps.push(f, gapFile);
-        outScenes[i].sec += per;
-      });
-      files.length = 0;
-      files.push(...withGaps);
+    const speechTotal = outScenes.reduce((a, s) => a + s.sec, 0);
+    const floor = targetSec * 0.82; // cho phep ngan hon muc tieu (vd 60s -> >= ~49s)
+    if (speechTotal + GAP_MIN * outScenes.length < floor) {
+      // thieu nhieu -> nghi dai hon de dat SAN (floor), toi da 1.2s/canh (khong ep tran target)
+      gap = Math.min(1.2, (floor - speechTotal) / outScenes.length);
     }
+  }
+  gap = Math.round(gap * 100) / 100;
+  {
+    const gapFile = path.join(workDir, "gap.mp3");
+    await run(FFMPEG, ["-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", String(gap), "-q:a", "9", gapFile]);
+    const withGaps = [];
+    files.forEach((f, i) => {
+      withGaps.push(f, gapFile);
+      outScenes[i].sec += gap; // sec = audio (speakSec) + nghi; karaoke chay theo speakSec roi giu
+    });
+    files.length = 0;
+    files.push(...withGaps);
   }
   // Ghep audio: concat demuxer.
   const listFile = path.join(workDir, "list.txt");

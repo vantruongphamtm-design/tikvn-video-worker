@@ -20,7 +20,8 @@ const { fontFamily } = loadFont("normal", {
 // ---- Kieu du lieu scene plan (LLM xuat ra cai nay) ----
 export type CompSpec = { type: string; data?: Record<string, unknown> };
 export type SceneSpec = {
-  sec: number; // do dai canh (giay) - lay tu do dai audio TTS
+  sec: number; // do dai canh (giay) - audio TTS + lang chen them
+  speakSec?: number; // do dai AUDIO THAT (giay) - karaoke chay theo cai nay, khong let
   industry: string; // id nganh (theme)
   kicker?: string; // nhan nho tren tieu de
   title?: string; // tieu de lon giua khung (\n xuong dong)
@@ -85,7 +86,8 @@ export function resolveTheme(props: AutoVideoProps): Theme {
 
 // Hat nen tinh (deterministic - Remotion can render on dinh, KHONG Math.random luc chay).
 const prand = (n: number) => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
-const PARTS = Array.from({ length: 54 }, (_, i) => ({
+// Hat nen: it hat + it blur/glow de render nhanh (blur/shadow rat ton khi render phan mem swangle).
+const PARTS = Array.from({ length: 30 }, (_, i) => ({
   x: prand(i + 1) * 100, y: prand(i + 40) * 100,
   r: prand(i + 80), ph: prand(i + 120) * Math.PI * 2, spd: 0.5 + prand(i + 160) * 1.5,
 }));
@@ -96,15 +98,15 @@ const Particles: React.FC<{ color: string; kind: "star" | "dot" | "soft" }> = ({
     <AbsoluteFill style={{ overflow: "hidden" }}>
       {PARTS.map((p, i) => {
         const tw = 0.3 + 0.7 * Math.abs(Math.sin(frame * 0.03 * p.spd + p.ph));
-        const rr = soft ? 24 + p.r * 60 : 1 + p.r * 3.5;
+        const rr = soft ? 18 + p.r * 30 : 1 + p.r * 3.2;
         const yy = p.y + Math.sin(frame * 0.012 * p.spd + p.ph) * (soft ? 1 : 2.4);
         return (
           <div key={i} style={{
             position: "absolute", left: `${p.x}%`, top: `${yy}%`,
             width: rr * 2, height: rr * 2, borderRadius: "50%", background: color,
-            opacity: (soft ? 0.07 : 0.5) * tw,
-            boxShadow: kind === "star" ? `0 0 ${rr * 3}px ${color}` : kind === "dot" ? `0 0 ${rr * 2}px ${color}` : "none",
-            filter: soft ? `blur(${rr * 0.9}px)` : "none",
+            opacity: (soft ? 0.08 : 0.5) * tw,
+            boxShadow: kind === "star" ? `0 0 ${rr * 2}px ${color}` : "none",
+            filter: soft ? `blur(${rr * 0.5}px)` : "none",
           }} />
         );
       })}
@@ -231,12 +233,14 @@ function motionStyle(motion: string | undefined, frame: number): React.CSSProper
 /** Phu de karaoke kieu Submagic: mot luc chi hien 1 CUM ~4 tu, tu DANG DOC to mau
  *  accent (cac tu khac trang), cum doi lien tuc theo giong. Cum moi pop vao. */
 const CHUNK = 4;
-const Caption: React.FC<{ text: string; acc: string; ink?: string; light?: boolean }> = ({ text, acc, ink = "#fff", light = false }) => {
+const Caption: React.FC<{ text: string; acc: string; ink?: string; light?: boolean; speakSec?: number }> = ({ text, acc, ink = "#fff", light = false, speakSec }) => {
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
   const words = text.split(" ").filter(Boolean);
   if (words.length === 0) return null;
-  const readEnd = Math.max(1, durationInFrames * 0.94);
+  // Karaoke hoan tat dung luc giong doc xong (speakSec = audio that), roi GIU;
+  // khong keo dai theo ca phan lang chen them -> het canh "giong nhanh hon phu de".
+  const readEnd = Math.max(1, Math.min(durationInFrames * 0.99, (speakSec ? speakSec * FPS : durationInFrames * 0.94)));
   const spokenWord = Math.min(words.length - 0.001, (frame / readEnd) * words.length);
   const cur = Math.floor(spokenWord); // tu dang doc (chi so toan cuc)
   const chunkIdx = Math.floor(cur / CHUNK);
@@ -689,7 +693,7 @@ const SceneView: React.FC<{ spec: SceneSpec; brand?: string; index: number; t: T
         )}
       </AbsoluteFill>
 
-      {spec.caption ? <Caption text={spec.caption} acc={acc} ink={ink} light={isLight} /> : null}
+      {spec.caption ? <Caption text={spec.caption} acc={acc} ink={ink} light={isLight} speakSec={spec.speakSec} /> : null}
 
       {brand ? (
         <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: 90 }}>
