@@ -20,6 +20,7 @@ function buildSystemPrompt(spec) {
     ``,
     `QUY TAC:`,
     `- Chon dung 1 industry id tu: ${INDUSTRY_IDS.join(", ")}.`,
+    `- Chon "theme" (phong cach do hoa toan video) tu 3 loai: "star" (nen den + sao lap lanh + accent cam/amber, sang trong, HOP tech/tai chinh/tin tuc/bat dong san/luat), "neon" (nen navy toi + accent xanh teal/luc neon + glow manh, cong nghe/nang dong, HOP ban hang/suc khoe), "paper" (nen sang kem + accent coral + nhieu khoang trang, sach/editorial, HOP giao duc/quote/nha khoa/am thuc/thuong hieu). Chon theme HOP NHAT voi noi dung.`,
     `- Canh dau la HOOK 3 giay giat tit; canh cuoi la CTA/ket.`,
     `- Moi canh co truong "caption" = CAU DOC tu nhien (se doc bang giong AI), tieng Viet CO DAU day du. Viet CHU THUONG binh thuong (sentence case), CHI IN HOA 1-2 TU KHOA quan trong nhat trong cau (de karaoke to mau) - TUYET DOI KHONG viet hoa ca cau. VD DUNG: "Vi sao meo lai LIEM LONG ca ngay?" (chi LIEM LONG hoa). VD SAI: "VI SAO MEO LAI LIEM LONG" (hoa het).`,
     `- "title" = tieu de ngan hien giua khung, IN HOA, 2-5 tu, dung \\n xuong dong (1-2 dong). BAT BUOC MOI CANH DEU CO "title", TRU khi canh do co "component" (thi title tuy chon). Title la diem nhan thi giac chinh - khong duoc bo trong.`,
@@ -33,6 +34,7 @@ function buildSystemPrompt(spec) {
     `CHI TRA VE JSON trong khoi \`\`\`json ... \`\`\`, dung dinh dang:`,
     `{`,
     `  "industry": "id",`,
+    `  "theme": "star | neon | paper",`,
     `  "brand": "@ten.kenh",`,
     `  "title": "Tieu de video de dang",`,
     `  "description": "Mo ta ngan",`,
@@ -77,6 +79,7 @@ function parsePlan(raw, spec) {
   if (m) s = m[1].trim();
   const plan = JSON.parse(s);
   const ind = INDUSTRY_IDS.includes(plan.industry) ? plan.industry : "tin";
+  const theme = ["star", "neon", "paper"].includes(plan.theme) ? plan.theme : undefined;
   let scenes = (plan.scenes || [])
     .filter((sc) => sc && typeof sc.caption === "string")
     .map((sc) => ({
@@ -94,6 +97,7 @@ function parsePlan(raw, spec) {
   if (scenes.length > spec.scenes) scenes = scenes.slice(0, spec.scenes);
   return {
     industry: ind,
+    theme,
     brand: plan.brand || "@kenh.cua.ban",
     title: plan.title || "Video",
     description: plan.description || "",

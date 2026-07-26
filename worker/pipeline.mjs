@@ -68,7 +68,7 @@ export async function runJob(input = {}) {
 
   // 6. Render MP4
   t = Date.now();
-  const mp4 = await renderVideo({ scenes, brand: plan.brand }, audioFile, jobId);
+  const mp4 = await renderVideo({ scenes, brand: plan.brand, theme: plan.theme }, audioFile, jobId);
   tick("render", t);
 
   // 7. Upload R2 (neu cau hinh)
