@@ -22,7 +22,12 @@ export async function runJob(input = {}) {
   const { mode, url, content, text, images = [], imageSource, voice, subtitle = true, durationSec = 60, brand } = input;
   const jobId = input.jobId || `job-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
+  // Do thoi gian tung khau (giay) de biet nut that thuc su.
+  const T = {};
+  const tick = (k, t0) => { T[k] = Math.round((Date.now() - t0) / 100) / 10; };
+
   // 1. Lay noi dung
+  let t = Date.now();
   let source = "";
   if (mode === "link" || (url && !content && !text)) {
     const ex = await extractFromUrl(url);
@@ -31,21 +36,23 @@ export async function runJob(input = {}) {
     source = content || text || "";
   }
   if (!source.trim()) throw new Error("Khong co noi dung (link rong hoac text rong)");
+  tick("extract", t);
 
   // 2. A3: LLM -> scene plan + tieu de/mo ta/hashtag
+  t = Date.now();
   const plan = await selectPlan(source, durationSec);
   if (brand) plan.brand = brand;
+  tick("llm", t);
 
-  // 3. Anh nen theo lua chon nguoi dung:
-  //    - upload: dung images[] (URL da tai len)
-  //    - stock: tim anh Pexels theo scene.imageQuery (A3 goi y)
-  //    - none/mac dinh: gradient nhieu mau
+  // 3. Anh nen theo lua chon nguoi dung
+  t = Date.now();
   const src = imageSource || (images.length ? "upload" : "none");
   if (src === "upload" && images.length) {
     plan.scenes.forEach((s, i) => (s.image = images[i % images.length]));
   } else if (src === "stock") {
     await stockForScenes(plan.scenes, "");
   }
+  tick("images", t);
 
   // 4. Phu de on/off: giu narration cho TTS, an caption hien thi neu tat
   plan.scenes.forEach((s) => {
@@ -53,16 +60,21 @@ export async function runJob(input = {}) {
     if (subtitle === false) s.caption = "";
   });
 
-  // 5. TTS -> audio ghep + sec moi canh = do dai audio cua canh do (karaoke khop giong).
-  //    targetSec: chen lang o cuoi de tong = dung moc, KHONG gian canh (giu sync).
+  // 5. TTS -> audio ghep + sec moi canh
+  t = Date.now();
   const workDir = await mkdtemp(path.join(os.tmpdir(), "tikvn-"));
   const { audioFile, scenes } = await synthAll(plan.scenes, voice, workDir, snapDuration(durationSec));
+  tick("tts", t);
 
   // 6. Render MP4
+  t = Date.now();
   const mp4 = await renderVideo({ scenes, brand: plan.brand }, audioFile, jobId);
+  tick("render", t);
 
   // 7. Upload R2 (neu cau hinh)
+  t = Date.now();
   const videoUrl = await uploadR2(mp4, `videos/${jobId}.mp4`);
+  tick("upload", t);
 
   await rm(workDir, { recursive: true, force: true }).catch(() => {});
   return {
@@ -74,6 +86,7 @@ export async function runJob(input = {}) {
     hashtags: plan.hashtags,
     industry: plan.industry,
     sceneCount: scenes.length,
+    timings: T,
   };
 }
 
