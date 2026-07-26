@@ -71,6 +71,7 @@ export function specFor(sec) {
   const d = snapDuration(sec);
   const s = DURATION_SPEC[d];
   const perSceneSec = Math.round((d / s.scenes) * 10) / 10;
-  // ~3.3 tu/giay (giong OmniVoice doc nhanh) -> caption dai du lap thoi luong, tranh dồn lang.
-  return { duration: d, scenes: s.scenes, structure: s.structure, perSceneSec, wordsPerScene: Math.round(perSceneSec * 3.3) };
+  // ~2.9 tu/giay: chua tru khoang nghi giua canh + so viet BANG CHU dai hon ->
+  // muc tieu thap hon de tong roi vao 50-60 (KHONG vuot moc). Tha ngan hon con hon lo.
+  return { duration: d, scenes: s.scenes, structure: s.structure, perSceneSec, wordsPerScene: Math.round(perSceneSec * 2.9) };
 }
