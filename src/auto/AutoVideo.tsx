@@ -638,9 +638,8 @@ const Kicker: React.FC<{ text: string; acc: string; panel: string; sz?: number }
   </div>
 );
 
-const SceneView: React.FC<{ spec: SceneSpec; brand?: string; index: number; t: Theme }> = ({ spec, brand, index, t }) => {
+const SceneView: React.FC<{ spec: SceneSpec; brand?: string; index: number; t: Theme; sceneFrames: number }> = ({ spec, brand, index, t, sceneFrames }) => {
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
   const acc = t.accents[index % t.accents.length];
   const onImg = !!spec.image;
   const ink = onImg ? "#ffffff" : t.ink;       // chu tren anh luon trang cho de doc
@@ -649,7 +648,9 @@ const SceneView: React.FC<{ spec: SceneSpec; brand?: string; index: number; t: T
   const ct: Theme = onImg
     ? { ...t, ink: "#ffffff", sub: "#e8edf3", panel: "rgba(8,12,20,.52)", pborder: "rgba(255,255,255,.24)", light: false }
     : t;
-  const bgScale = interpolate(frame, [0, durationInFrames], [1.05, 1.16], { extrapolateRight: "clamp" });
+  // Ken Burns theo DO DAI CANH (khong phai ca video): trong Sequence, frame la 0..sceneFrames,
+  // nen zoom chay tron ven 1.05 -> 1.16 moi canh. Truoc day dung durationInFrames ca video -> anh gan nhu dung yen.
+  const bgScale = interpolate(frame, [0, Math.max(1, sceneFrames)], [1.05, 1.16], { extrapolateRight: "clamp" });
 
   return (
     <AbsoluteFill>
@@ -737,7 +738,7 @@ export const AutoVideo: React.FC<AutoVideoProps> = (props) => {
         cursor += len;
         return (
           <Sequence key={i} from={from} durationInFrames={len} layout="none">
-            <SceneView spec={s} brand={brand} index={i} t={t} />
+            <SceneView spec={s} brand={brand} index={i} t={t} sceneFrames={len} />
           </Sequence>
         );
       })}

@@ -24,17 +24,31 @@ async function durationOf(file) {
   return Number.isFinite(d) ? d : 3;
 }
 
-// Goi OmniVoice (RunPod). Contract: input {text, language, ref_audio_url?|instruct?, output_format},
+// Goi OmniVoice (RunPod). Contract: input {text, language, ref_audio_base64?|instruct?, output_format},
 // output {audio_base64|audio_url, duration_seconds}. Tra ve {ok, sec} hoac false neu chua co key.
-// voice: "" -> auto (giong mac dinh); URL -> clone (ref_audio_url); "instruct:..." -> voice_design.
+// voice: "" -> auto (giong mac dinh); URL -> clone; "instruct:..." -> voice_design.
+// endpoint: mac dinh dung endpoint RIENG cho video "giong doc video ngan" qua RUNPOD_TTS_ENDPOINT_ID
+// (tach khoi endpoint giong cua web). Chua set env thi ve endpoint OmniVoice chung h2t1xhru34n54n.
 async function synthReal(text, voice, outFile) {
   const endpoint = process.env.RUNPOD_TTS_ENDPOINT_ID || "h2t1xhru34n54n";
   const apiKey = process.env.RUNPOD_API_KEY;
   if (!apiKey) return false;
 
   const input = { text, language: "Vietnamese", output_format: "mp3" };
-  if (voice && /^https?:/.test(voice)) input.ref_audio_url = voice;
-  else if (voice && voice.startsWith("instruct:")) input.instruct = voice.slice(9).trim();
+  if (voice && /^https?:/.test(voice)) {
+    // Tai file tham chieu -> base64. OmniVoice that doc ref_audio_base64 (khop web /api/tts).
+    // Gui ref_audio_url thi handler co the BO QUA -> giong ve mac dinh (day la loi "giong sai").
+    try {
+      const rf = await fetch(voice, { headers: { "User-Agent": "tikvn/1.0" } });
+      if (!rf.ok) throw new Error(`ref audio ${rf.status}`);
+      input.ref_audio_base64 = Buffer.from(await rf.arrayBuffer()).toString("base64");
+    } catch (e) {
+      // Khong tai duoc ref -> de OmniVoice tu chon giong mac dinh (khong chan job).
+      console.error("TTS ref audio loi (dung giong mac dinh):", e && e.message ? e.message : e);
+    }
+  } else if (voice && voice.startsWith("instruct:")) {
+    input.instruct = voice.slice(9).trim();
+  }
   if (process.env.OMNIVOICE_REF_TEXT) input.ref_text = process.env.OMNIVOICE_REF_TEXT;
 
   const res = await fetch(`https://api.runpod.ai/v2/${endpoint}/runsync`, {
