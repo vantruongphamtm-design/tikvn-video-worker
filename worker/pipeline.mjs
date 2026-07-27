@@ -162,8 +162,11 @@ export async function runJob(input = {}) {
     const outputs = await Promise.all(ids.map((id) => gpuPoll(GPU_EP, id)));
     tick("renderGpu", t);
     t = Date.now();
+    // Lo cua chunk GPU (handler tra {error}) -> surface ngay de chan doan (thay vi "no chunks" chung chung).
+    const errored = outputs.find((o) => o && o.error);
+    if (errored) throw new Error("GPU chunk loi: " + String(errored.error).slice(0, 400));
     const chunks = outputs.filter((o) => o && o.chunkUrl).sort((a, b) => (a.chunkIndex || 0) - (b.chunkIndex || 0));
-    if (!chunks.length) throw new Error("Khong nhan duoc chunk video nao tu GPU");
+    if (!chunks.length) throw new Error("Khong co chunkUrl. Raw outputs: " + JSON.stringify(outputs).slice(0, 500));
     const files = [];
     for (const c of chunks) {
       const f = path.join(workDir, `chunk-${c.chunkIndex}.mp4`);
