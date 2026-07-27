@@ -7,7 +7,7 @@ import { synthAll } from "./tts.mjs";
 import { renderVideo } from "./render.mjs";
 import { uploadR2 } from "./r2.mjs";
 import { stockForScenes } from "./images.mjs";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -21,6 +21,21 @@ import path from "node:path";
 export async function runJob(input = {}) {
   const { mode, url, content, text, images = [], imageSource, voice, subtitle = true, durationSec = 60, brand } = input;
   const jobId = input.jobId || `job-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+
+  // ===== TANG 2 (chay tren worker GPU): CHI RENDER tu plan + audio da co san (khong LLM/TTS) =====
+  if (input.stage === "render") {
+    const wd = await mkdtemp(path.join(os.tmpdir(), "tikvn-r-"));
+    let audioFile = null;
+    if (input.audioUrl) {
+      audioFile = path.join(wd, "voice.mp3");
+      const res = await fetch(input.audioUrl, { headers: { "User-Agent": "tikvn/1.0" } });
+      await writeFile(audioFile, Buffer.from(await res.arrayBuffer()));
+    }
+    const mp4 = await renderVideo({ scenes: input.scenes || [], brand: input.brand, theme: input.theme }, audioFile, jobId);
+    const videoUrl = await uploadR2(mp4, `videos/${jobId}.mp4`);
+    await rm(wd, { recursive: true, force: true }).catch(() => {});
+    return { jobId, videoUrl: videoUrl || `file://${mp4}`, stage: "render" };
+  }
 
   // Do thoi gian tung khau (giay) de biet nut that thuc su.
   const T = {};
@@ -66,28 +81,33 @@ export async function runJob(input = {}) {
   const { audioFile, scenes } = await synthAll(plan.scenes, voice, workDir, snapDuration(durationSec));
   tick("tts", t);
 
-  // 6. Render MP4
+  const meta = { jobId, title: plan.title, description: plan.description, hashtags: plan.hashtags, industry: plan.industry, theme: plan.theme, sceneCount: scenes.length, timings: T };
+
+  // 6. RENDER: neu co GPU_RENDER_ENDPOINT_ID -> TANG 2: upload audio + BAN job render sang GPU (async)
+  //    roi TRA VE NGAY (CPU ngung tinh tien; GPU chi tinh luc render). App/caller poll GPU de lay video.
+  const GPU_EP = process.env.GPU_RENDER_ENDPOINT_ID;
+  if (GPU_EP) {
+    t = Date.now();
+    const audioUrl = await uploadR2(audioFile, `audio/${jobId}.mp3`);
+    const disp = await fetch(`https://api.runpod.ai/v2/${GPU_EP}/run`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.RUNPOD_API_KEY}`, "Content-Type": "application/json", "User-Agent": "tikvn/1.0" },
+      body: JSON.stringify({ input: { stage: "render", scenes, brand: plan.brand, theme: plan.theme, audioUrl, jobId } }),
+    }).then((r) => r.json());
+    tick("dispatch", t);
+    await rm(workDir, { recursive: true, force: true }).catch(() => {});
+    return { ...meta, timings: T, stage1: "done", gpuEndpoint: GPU_EP, gpuJobId: disp.id, audioUrl };
+  }
+
+  // Fallback: render tai cho (CPU-only, khong cau hinh GPU)
   t = Date.now();
   const mp4 = await renderVideo({ scenes, brand: plan.brand, theme: plan.theme }, audioFile, jobId);
   tick("render", t);
-
-  // 7. Upload R2 (neu cau hinh)
   t = Date.now();
   const videoUrl = await uploadR2(mp4, `videos/${jobId}.mp4`);
   tick("upload", t);
-
   await rm(workDir, { recursive: true, force: true }).catch(() => {});
-  return {
-    jobId,
-    videoUrl: videoUrl || `file://${mp4}`,
-    localPath: mp4,
-    title: plan.title,
-    description: plan.description,
-    hashtags: plan.hashtags,
-    industry: plan.industry,
-    sceneCount: scenes.length,
-    timings: T,
-  };
+  return { ...meta, timings: T, videoUrl: videoUrl || `file://${mp4}`, localPath: mp4 };
 }
 
 // CLI: node worker/pipeline.mjs input.json  (in ra RESULT_JSON:{...})
