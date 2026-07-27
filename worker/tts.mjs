@@ -29,12 +29,13 @@ async function durationOf(file) {
 // voice: "" -> auto (giong mac dinh); URL -> clone; "instruct:..." -> voice_design.
 // endpoint: mac dinh dung endpoint RIENG cho video "giong doc video ngan" qua RUNPOD_TTS_ENDPOINT_ID
 // (tach khoi endpoint giong cua web). Chua set env thi ve endpoint OmniVoice chung h2t1xhru34n54n.
-async function synthReal(text, voice, outFile) {
+async function synthReal(text, voice, outFile, refText) {
   const endpoint = process.env.RUNPOD_TTS_ENDPOINT_ID || "h2t1xhru34n54n";
   const apiKey = process.env.RUNPOD_API_KEY;
   if (!apiKey) return false;
 
-  const input = { text, language: "Vietnamese", output_format: "mp3" };
+  // num_step 32 khop web (handler mac dinh cung 32 -> vo hai, de ro rang).
+  const input = { text, language: "Vietnamese", output_format: "mp3", num_step: 32 };
   if (voice && /^https?:/.test(voice)) {
     // Tai file tham chieu -> base64. OmniVoice that doc ref_audio_base64 (khop web /api/tts).
     // Gui ref_audio_url thi handler co the BO QUA -> giong ve mac dinh (day la loi "giong sai").
@@ -49,7 +50,10 @@ async function synthReal(text, voice, outFile) {
   } else if (voice && voice.startsWith("instruct:")) {
     input.instruct = voice.slice(9).trim();
   }
-  if (process.env.OMNIVOICE_REF_TEXT) input.ref_text = process.env.OMNIVOICE_REF_TEXT;
+  // ref_text PHAI khop ref_audio (OmniVoice F5) -> chi gui khi co transcript khop VA da tai duoc ref audio.
+  // Thieu transcript -> BO ref_text de OmniVoice tu boc loi (align dung). KHONG dung env co dinh:
+  // env chi khop 1 giong -> lech 11 giong con lai -> giong doc noi dung khong lien quan (bug da gap).
+  if (refText && refText.trim() && input.ref_audio_base64) input.ref_text = refText;
 
   const res = await fetch(`https://api.runpod.ai/v2/${endpoint}/runsync`, {
     method: "POST",
@@ -88,7 +92,7 @@ async function synthMock(text, outFile) {
 // So request TTS chay song song (khop workersMax cua endpoint TTS = 4). Chinh qua env.
 const TTS_CONCURRENCY = Number(process.env.TTS_CONCURRENCY) || 4;
 
-export async function synthAll(scenes, voice, workDir, targetSec) {
+export async function synthAll(scenes, voice, workDir, targetSec, voiceRefText) {
   await mkdir(workDir, { recursive: true });
   // TTS moi canh SONG SONG (pool TTS_CONCURRENCY) thay vi tuan tu -> nhanh hon nhieu.
   // Ket qua giu dung thu tu canh (ghi vao secs[i]).
@@ -98,7 +102,7 @@ export async function synthAll(scenes, voice, workDir, targetSec) {
     const speak = scenes[i].narration || scenes[i].caption || " ";
     let sec;
     try {
-      const r = await synthReal(speak, voice, f);
+      const r = await synthReal(speak, voice, f, voiceRefText);
       if (r && r.ok) sec = r.sec ?? (await durationOf(f));
       else sec = await synthMock(speak, f);
     } catch (e) {

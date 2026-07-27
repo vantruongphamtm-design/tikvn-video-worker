@@ -25,7 +25,7 @@ function deCaps(text) {
  * }
  */
 export async function runJob(input = {}) {
-  const { mode, url, content, text, images = [], imageSource, voice, subtitle = true, durationSec = 60, brand } = input;
+  const { mode, url, content, text, images = [], imageSource, voice, voiceRefText, subtitle = true, durationSec = 60, brand } = input;
   const jobId = input.jobId || `job-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
   // ===== TANG 2 (chay tren worker GPU): CHI RENDER tu plan + audio da co san (khong LLM/TTS) =====
@@ -108,7 +108,7 @@ export async function runJob(input = {}) {
   // 5. TTS -> audio ghep + sec moi canh
   t = Date.now();
   const workDir = await mkdtemp(path.join(os.tmpdir(), "tikvn-"));
-  const { audioFile, scenes } = await synthAll(plan.scenes, voice, workDir, snapDuration(durationSec));
+  const { audioFile, scenes } = await synthAll(plan.scenes, voice, workDir, snapDuration(durationSec), voiceRefText);
   tick("tts", t);
 
   const meta = { jobId, title: plan.title, description: plan.description, hashtags: plan.hashtags, industry: plan.industry, theme: plan.theme, sceneCount: scenes.length, timings: T };
