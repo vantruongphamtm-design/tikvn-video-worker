@@ -4,7 +4,13 @@ import { INDUSTRIES, MOTIONS, COMPONENTS, INDUSTRY_IDS, specFor } from "./catalo
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = process.env.OPENROUTER_VIDEO_MODEL || process.env.OPENROUTER_MODEL || "google/gemini-2.5-flash";
-const FALLBACK_MODEL = "google/gemini-2.5-flash-lite";
+const FALLBACK_MODEL = "google/gemini-2.5-flash";
+
+// Bat caption tieng Viet BI MAT DAU (loi ngau nhien cua LLM) -> de retry.
+const hasAccent = (s) => /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(s);
+function accentBad(plan) {
+  return (plan.scenes || []).filter((s) => s.caption && s.caption.split(" ").length >= 5 && !hasAccent(s.caption)).length;
+}
 
 function buildSystemPrompt(spec) {
   return [
@@ -124,10 +130,18 @@ export async function selectPlan(content, durationSec = 60) {
   const spec = specFor(durationSec);
   const sys = buildSystemPrompt(spec);
   const text = String(content).slice(0, 8000);
-  try {
-    return parsePlan(await callModel(sys, text, DEFAULT_MODEL), spec);
-  } catch (e) {
-    // Retry 1 lan voi model fallback (JSON hong / model loi).
-    return parsePlan(await callModel(sys, text, FALLBACK_MODEL), spec);
+  // GUARD tu-retry: mat dau la loi NGAU NHIEN cua LLM. Thu toi da 3 lan
+  // (2x model chinh + 1x fallback); tra ve ban SACH DAU TIEN, khong thi lay ban IT LOI nhat.
+  const attempts = [DEFAULT_MODEL, DEFAULT_MODEL, FALLBACK_MODEL];
+  let best = null, bestBad = Infinity;
+  for (let i = 0; i < attempts.length; i++) {
+    try {
+      const plan = parsePlan(await callModel(sys, text, attempts[i]), spec);
+      const bad = accentBad(plan);
+      if (bad === 0) return plan;                       // sach hoan toan -> dung ngay
+      if (bad < bestBad) { best = plan; bestBad = bad; } // giu ban it loi nhat
+    } catch (e) { /* thu lan sau */ }
   }
+  if (best) return best;
+  throw new Error("Khong tao duoc scene plan hop le sau 3 lan thu");
 }
