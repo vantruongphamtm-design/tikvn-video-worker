@@ -54,7 +54,9 @@ export async function renderVideo(plan, audioFile, jobId) {
     publicDir: PUBLIC,
     // concurrency: theo vCPU (RunPod nhieu core -> nhanh). null = Remotion tu chon.
     concurrency: process.env.RENDER_CONCURRENCY ? Number(process.env.RENDER_CONCURRENCY) : null,
-    chromiumOptions: { gl: "swangle" }, // software GL cho CPU headless
+    // GL backend: mac dinh "swangle" (phan mem, CPU). Tren worker GPU dat REMOTION_GL=angle-egl | vulkan
+    // de rasterize bang GPU (nhanh hon nhieu cho shadow/blur/gradient nang).
+    chromiumOptions: { gl: process.env.REMOTION_GL || "swangle" },
   });
   return outFile;
 }

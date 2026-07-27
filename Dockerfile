@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 libatk-bridge2.0-0 \
     libpango-1.0-0 libcairo2 libcups2 libxext6 libxrender1 libxi6 \
     fonts-liberation fonts-noto-core fonts-noto-cjk ca-certificates \
+    libgl1 libglx-mesa0 libegl1 libgles2 libvulkan1 mesa-vulkan-drivers libglu1-mesa \
   && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --no-cache-dir --break-system-packages runpod
