@@ -37,7 +37,7 @@ function buildSystemPrompt(spec) {
     `  * SO viet bang CHU, KHONG dung chu so/ky hieu trong caption: "20%" -> "hai muoi phan tram", "3-6 thang" -> "ba den sau thang", "14 lan" -> "muoi bon lan", "36%" -> "ba muoi sau phan tram".`,
     `  * KHONG dung tu viet tat / tieng Anh trong caption (DTI, API, GitHub, ROI, KPI...). Thay bang tieng Viet ("ty le no tren thu nhap"). Neu buoc phai neu, viet cach doc tieng Viet.`,
     `  * Ky hieu (%, /, +) va chu so CHI duoc dung trong "component.data" (phan do hoa - KHONG doc len). TUYET DOI khong xuat hien trong caption.`,
-    `  * Tieng Viet CO DAU day du, chinh ta chuan. Viet chu thuong, CHI IN HOA 1-2 tu khoa quan trong nhat (de karaoke to mau) - KHONG hoa ca cau. VD: "Chi can theo doi con so nay, ban da KIEM SOAT duoc tien bac moi thang."`,
+    `  * Tieng Viet CO DAU day du, chinh ta chuan. Caption LA LOI DOC (giong AI doc len) nen viet hoa/thuong NHU CAU VAN BINH THUONG: chi viet hoa chu cai dau cau va ten rieng. TUYET DOI KHONG VIET HOA TOAN BO bat ky tu nao trong caption (vd KHONG viet "GIO", "KIEM SOAT", "TOP 5") — giong AI doc SAI chu in hoa. Muon nhan manh thi dung tu ngu manh. VD DUNG: "Chi can theo doi con so nay, ban da kiem soat duoc tien bac moi thang." (Rieng "title" hien tren khung, KHONG doc -> van IN HOA binh thuong.)`,
     `- "title" = tieu de ngan hien giua khung, IN HOA, 2-5 tu, dung \\n xuong dong (1-2 dong). BAT BUOC MOI CANH DEU CO "title", TRU khi canh do co "component" (thi title tuy chon). Title la diem nhan thi giac chinh - khong duoc bo trong.`,
     `- "kicker" = nhan nho phia tren title (1-2 tu, vd "Su that", "Ban co biet", "Ly do 1"). MOI CANH nen co kicker.`,
     `- "motion" chon tu: ${MOTIONS.join(", ")}. Moi canh dung MOT motion KHAC NHAU (da dang cho song dong).`,

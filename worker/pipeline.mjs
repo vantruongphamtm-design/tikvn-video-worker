@@ -11,6 +11,12 @@ import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+// Ha cac tu VIET HOA TOAN BO (>=2 ky tu) ve chu thuong -> danh cho PHAN LOI DOC (TTS).
+// Giong AI doc sai chu in hoa toan bo (danh van/bo qua). Giu nguyen tu Title-case (dau cau, ten rieng).
+function deCaps(text) {
+  return String(text || "").replace(/[\p{Lu}][\p{Lu}\p{M}]+/gu, (w) => w.toLowerCase());
+}
+
 /**
  * input = {
  *   mode?: "link" | "text", url?, content?/text?,
@@ -91,9 +97,11 @@ export async function runJob(input = {}) {
   }
   tick("images", t);
 
-  // 4. Phu de on/off: giu narration cho TTS, an caption hien thi neu tat
+  // 4. Phu de on/off: giu narration cho TTS, an caption hien thi neu tat.
+  //    LUOI AN TOAN: ha cac tu VIET HOA TOAN BO ve chu thuong CHO PHAN LOI DOC (giong AI doc sai
+  //    chu in hoa, vd "GIO" doc thanh danh van). Caption HIEN THI giu nguyen (nhan manh thi giac).
   plan.scenes.forEach((s) => {
-    s.narration = s.caption;
+    s.narration = deCaps(s.caption);
     if (subtitle === false) s.caption = "";
   });
 
