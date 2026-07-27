@@ -4,7 +4,8 @@ import { extractFromUrl } from "./extract.mjs";
 import { selectPlan } from "./selectPlan.mjs";
 import { snapDuration } from "./catalog.mjs";
 import { synthAll } from "./tts.mjs";
-import { renderVideo } from "./render.mjs";
+import { selectComp, renderRange, renderVideo, chunkRange } from "./render.mjs";
+import { combineChunks } from "./ffmpeg.mjs";
 import { uploadR2 } from "./r2.mjs";
 import { stockForScenes } from "./images.mjs";
 import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
@@ -15,6 +16,35 @@ import path from "node:path";
 // Giong AI doc sai chu in hoa toan bo (danh van/bo qua). Giu nguyen tu Title-case (dau cau, ten rieng).
 function deCaps(text) {
   return String(text || "").replace(/[\p{Lu}][\p{Lu}\p{M}]+/gu, (w) => w.toLowerCase());
+}
+
+// ── Gọi endpoint GPU render + poll (render chunk song song nhiều worker) ──
+async function gpuDispatch(ep, input) {
+  const r = await fetch(`https://api.runpod.ai/v2/${ep}/run`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.RUNPOD_API_KEY}`, "Content-Type": "application/json", "User-Agent": "tikvn/1.0" },
+    body: JSON.stringify({ input }),
+  }).then((r) => r.json());
+  if (!r || !r.id) throw new Error("GPU dispatch khong tra id: " + JSON.stringify(r).slice(0, 200));
+  return r.id;
+}
+async function gpuPoll(ep, id, intervalMs = 2000, timeoutMs = 600000) {
+  const t0 = Date.now();
+  for (;;) {
+    const s = await fetch(`https://api.runpod.ai/v2/${ep}/status/${id}`, {
+      headers: { Authorization: `Bearer ${process.env.RUNPOD_API_KEY}`, "User-Agent": "tikvn/1.0" },
+    }).then((r) => r.json());
+    if (s.status === "COMPLETED") return s.output || {};
+    if (s.status === "FAILED" || s.status === "CANCELLED" || s.status === "TIMED_OUT")
+      throw new Error(`GPU chunk ${s.status}: ${JSON.stringify(s.output || s.error || "").slice(0, 200)}`);
+    if (Date.now() - t0 > timeoutMs) throw new Error("GPU chunk timeout");
+    await new Promise((res) => setTimeout(res, intervalMs));
+  }
+}
+async function downloadTo(url, file) {
+  const res = await fetch(url, { headers: { "User-Agent": "tikvn/1.0" } });
+  if (!res.ok) throw new Error(`download chunk ${res.status}`);
+  await writeFile(file, Buffer.from(await res.arrayBuffer()));
 }
 
 /**
@@ -28,19 +58,18 @@ export async function runJob(input = {}) {
   const { mode, url, content, text, images = [], imageSource, voice, voiceRefText, subtitle = true, durationSec = 60, brand } = input;
   const jobId = input.jobId || `job-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 
-  // ===== TANG 2 (chay tren worker GPU): CHI RENDER tu plan + audio da co san (khong LLM/TTS) =====
+  // ===== TANG 2 (worker GPU): render 1 CHUNK (khoang frame) cua video, KHONG tieng -> upload R2. =====
+  //  CPU se tai cac chunk ve, concat + mux audio thanh video hoan chinh (nhanh gap ~chunkCount lan).
   if (input.stage === "render") {
-    const wd = await mkdtemp(path.join(os.tmpdir(), "tikvn-r-"));
-    let audioFile = null;
-    if (input.audioUrl) {
-      audioFile = path.join(wd, "voice.mp3");
-      const res = await fetch(input.audioUrl, { headers: { "User-Agent": "tikvn/1.0" } });
-      await writeFile(audioFile, Buffer.from(await res.arrayBuffer()));
-    }
-    const mp4 = await renderVideo({ scenes: input.scenes || [], brand: input.brand, theme: input.theme }, audioFile, jobId);
-    const videoUrl = await uploadR2(mp4, `videos/${jobId}.mp4`);
-    await rm(wd, { recursive: true, force: true }).catch(() => {});
-    return { jobId, videoUrl: videoUrl || `file://${mp4}`, stage: "render" };
+    const plan = { scenes: input.scenes || [], brand: input.brand, theme: input.theme };
+    const chunkIndex = Number(input.chunkIndex) || 0;
+    const chunkCount = Number(input.chunkCount) || 1;
+    const comp = await selectComp(plan);
+    const range = chunkCount > 1 ? chunkRange(comp.durationInFrames, chunkCount, chunkIndex) : null;
+    if (chunkCount > 1 && !range) return { chunkUrl: null, chunkIndex, empty: true, stage: "render" };
+    const mp4 = await renderRange(comp, plan, `${jobId}-c${chunkIndex}`, range);
+    const chunkUrl = await uploadR2(mp4, `chunks/${jobId}-c${chunkIndex}.mp4`);
+    return { chunkUrl, chunkIndex, stage: "render" };
   }
 
   // ===== STAGE PLAN: CHI bóc nội dung + LLM -> tra ve kich ban (khong TTS/render) =====
@@ -113,31 +142,48 @@ export async function runJob(input = {}) {
 
   const meta = { jobId, title: plan.title, description: plan.description, hashtags: plan.hashtags, industry: plan.industry, theme: plan.theme, sceneCount: scenes.length, timings: T };
 
-  // 6. RENDER: neu co GPU_RENDER_ENDPOINT_ID -> TANG 2: upload audio + BAN job render sang GPU (async)
-  //    roi TRA VE NGAY (CPU ngung tinh tien; GPU chi tinh luc render). App/caller poll GPU de lay video.
+  // 6. RENDER: chia video thanh nhieu CHUNK, ban SONG SONG sang nhieu worker GPU render (moi worker 1 chunk),
+  //    roi CPU tai ve + concat (copy, khong re-encode) + mux audio -> video hoan chinh. Nhanh gap ~chunkCount lan.
   const GPU_EP = process.env.GPU_RENDER_ENDPOINT_ID;
-  if (GPU_EP) {
-    t = Date.now();
-    const audioUrl = await uploadR2(audioFile, `audio/${jobId}.mp3`);
-    const disp = await fetch(`https://api.runpod.ai/v2/${GPU_EP}/run`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${process.env.RUNPOD_API_KEY}`, "Content-Type": "application/json", "User-Agent": "tikvn/1.0" },
-      body: JSON.stringify({ input: { stage: "render", scenes, brand: plan.brand, theme: plan.theme, audioUrl, jobId } }),
-    }).then((r) => r.json());
-    tick("dispatch", t);
-    await rm(workDir, { recursive: true, force: true }).catch(() => {});
-    return { ...meta, timings: T, stage1: "done", gpuEndpoint: GPU_EP, gpuJobId: disp.id, audioUrl };
-  }
+  const renderPlan = { scenes, brand: plan.brand, theme: plan.theme };
+  const estFrames = Math.round(scenes.reduce((a, s) => a + (Number(s.sec) || 3), 0) * 30);
+  const maxChunks = Number(process.env.RENDER_CHUNKS) || 3;
+  const chunkCount = Math.max(1, Math.min(maxChunks, Math.floor(estFrames / 200) || 1));
+  const finalMp4 = path.join(workDir, `${jobId}.mp4`);
+  const listTxt = path.join(workDir, "concat.txt");
 
-  // Fallback: render tai cho (CPU-only, khong cau hinh GPU)
+  if (GPU_EP && chunkCount > 1) {
+    t = Date.now();
+    const ids = await Promise.all(
+      Array.from({ length: chunkCount }, (_, i) =>
+        gpuDispatch(GPU_EP, { stage: "render", scenes, brand: plan.brand, theme: plan.theme, jobId, chunkIndex: i, chunkCount })
+      )
+    );
+    const outputs = await Promise.all(ids.map((id) => gpuPoll(GPU_EP, id)));
+    tick("renderGpu", t);
+    t = Date.now();
+    const chunks = outputs.filter((o) => o && o.chunkUrl).sort((a, b) => (a.chunkIndex || 0) - (b.chunkIndex || 0));
+    if (!chunks.length) throw new Error("Khong nhan duoc chunk video nao tu GPU");
+    const files = [];
+    for (const c of chunks) {
+      const f = path.join(workDir, `chunk-${c.chunkIndex}.mp4`);
+      await downloadTo(c.chunkUrl, f);
+      files.push(f);
+    }
+    await combineChunks(files, listTxt, audioFile, finalMp4);
+    tick("combine", t);
+  } else {
+    // Fallback: render CA video (muted) tai cho + mux audio (CPU-only, khong GPU, hoac video qua ngan).
+    t = Date.now();
+    const silent = await renderVideo(renderPlan, `${jobId}-silent`);
+    await combineChunks([silent], listTxt, audioFile, finalMp4);
+    tick("render", t);
+  }
   t = Date.now();
-  const mp4 = await renderVideo({ scenes, brand: plan.brand, theme: plan.theme }, audioFile, jobId);
-  tick("render", t);
-  t = Date.now();
-  const videoUrl = await uploadR2(mp4, `videos/${jobId}.mp4`);
+  const videoUrl = await uploadR2(finalMp4, `videos/${jobId}.mp4`);
   tick("upload", t);
   await rm(workDir, { recursive: true, force: true }).catch(() => {});
-  return { ...meta, timings: T, videoUrl: videoUrl || `file://${mp4}`, localPath: mp4 };
+  return { ...meta, timings: T, videoUrl: videoUrl || `file://${finalMp4}` };
 }
 
 // CLI: node worker/pipeline.mjs input.json  (in ra RESULT_JSON:{...})

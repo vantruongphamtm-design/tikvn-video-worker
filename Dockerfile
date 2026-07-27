@@ -26,9 +26,15 @@ COPY . .
 # Tai san Chrome Headless Shell vao image luc build (khong tai luc chay)
 RUN npx remotion browser ensure
 
+# PREBUNDLE Remotion vao /app/.bundle luc BUILD -> worker KHONG bundle lai luc chay
+# (bo 30-60s bundle moi lan worker lanh = nut that toc do lon nhat).
+RUN node worker/prebundle.mjs
+
 # Model manh hon cho A3 scene-plan (flash-lite qua yeu -> canh trong, thieu title/component).
 # Template RunPod khong set OPENROUTER_VIDEO_MODEL nen ENV nay se duoc dung.
+# RENDER_CONCURRENCY/RENDER_CHUNKS/REMOTION_GL dat o ENDPOINT (theo vCPU + GPU); day chi la mac dinh.
 ENV RENDER_CONCURRENCY=2 \
+    RENDER_CHUNKS=3 \
     NODE_ENV=production \
     OPENROUTER_VIDEO_MODEL=google/gemini-2.5-flash
 
