@@ -68,6 +68,9 @@ async function callModel(systemPrompt, content, model) {
     body: JSON.stringify({
       model,
       temperature: 0.5,
+      // Ghim theo provider NHANH NHAT (throughput cao) + fallback neu chet ->
+      // tranh con provider cham gay vot 122s. Khong ghim ten cung (provider co the die).
+      provider: { sort: "throughput", allow_fallbacks: true },
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content },
