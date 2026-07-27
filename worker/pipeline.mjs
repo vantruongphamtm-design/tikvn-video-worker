@@ -37,27 +37,49 @@ export async function runJob(input = {}) {
     return { jobId, videoUrl: videoUrl || `file://${mp4}`, stage: "render" };
   }
 
+  // ===== STAGE PLAN: CHI bóc nội dung + LLM -> tra ve kich ban (khong TTS/render) =====
+  // Web goi stage nay de nguoi dung XEM & SUA kich ban truoc, roi moi gui plan da sua di render.
+  if (input.stage === "plan") {
+    let source = "";
+    if (mode === "link" || (url && !content && !text)) {
+      const ex = await extractFromUrl(url);
+      source = `${ex.title}\n${ex.text}`;
+    } else {
+      source = content || text || "";
+    }
+    if (!source.trim()) throw new Error("Khong co noi dung (link rong hoac text rong)");
+    const plan = await selectPlan(source, durationSec);
+    if (brand) plan.brand = brand;
+    return { jobId, stage: "plan", plan };
+  }
+
   // Do thoi gian tung khau (giay) de biet nut that thuc su.
   const T = {};
   const tick = (k, t0) => { T[k] = Math.round((Date.now() - t0) / 100) / 10; };
 
-  // 1. Lay noi dung
+  // 1-2. Lay noi dung + LLM -> plan. NEU web da gui plan da sua (input.plan) thi DUNG LUON,
+  //      bo qua extract + LLM (nguoi dung da duyet kich ban o buoc truoc).
   let t = Date.now();
-  let source = "";
-  if (mode === "link" || (url && !content && !text)) {
-    const ex = await extractFromUrl(url);
-    source = `${ex.title}\n${ex.text}`;
+  let plan;
+  if (input.plan && Array.isArray(input.plan.scenes) && input.plan.scenes.length) {
+    plan = input.plan;
+    tick("extract", t);
+    tick("llm", t);
   } else {
-    source = content || text || "";
+    let source = "";
+    if (mode === "link" || (url && !content && !text)) {
+      const ex = await extractFromUrl(url);
+      source = `${ex.title}\n${ex.text}`;
+    } else {
+      source = content || text || "";
+    }
+    if (!source.trim()) throw new Error("Khong co noi dung (link rong hoac text rong)");
+    tick("extract", t);
+    t = Date.now();
+    plan = await selectPlan(source, durationSec);
+    tick("llm", t);
   }
-  if (!source.trim()) throw new Error("Khong co noi dung (link rong hoac text rong)");
-  tick("extract", t);
-
-  // 2. A3: LLM -> scene plan + tieu de/mo ta/hashtag
-  t = Date.now();
-  const plan = await selectPlan(source, durationSec);
   if (brand) plan.brand = brand;
-  tick("llm", t);
 
   // 3. Anh nen theo lua chon nguoi dung
   t = Date.now();
