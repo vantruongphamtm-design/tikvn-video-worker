@@ -6,6 +6,7 @@ import { snapDuration } from "./catalog.mjs";
 import { synthAll } from "./tts.mjs";
 import { selectComp, renderRange, renderVideo, chunkRange } from "./render.mjs";
 import { combineChunks } from "./ffmpeg.mjs";
+import { renderVideoFFmpeg } from "./ffmpegRender.mjs";
 import { uploadR2 } from "./r2.mjs";
 import { stockForScenes } from "./images.mjs";
 import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
@@ -142,45 +143,53 @@ export async function runJob(input = {}) {
 
   const meta = { jobId, title: plan.title, description: plan.description, hashtags: plan.hashtags, industry: plan.industry, theme: plan.theme, sceneCount: scenes.length, timings: T };
 
-  // 6. RENDER: chia video thanh nhieu CHUNK, ban SONG SONG sang nhieu worker GPU render (moi worker 1 chunk),
-  //    roi CPU tai ve + concat (copy, khong re-encode) + mux audio -> video hoan chinh. Nhanh gap ~chunkCount lan.
-  const GPU_EP = process.env.GPU_RENDER_ENDPOINT_ID;
+  // 6. RENDER. MAC DINH = FFMPEG THUAN: 1 worker CPU, khong Chrome/GPU, render vai giay/video.
+  //    Moi canh = anh + Ken Burns + tieu de + karaoke burn (ASS) -> concat + mux giong. Bo hieu ung
+  //    browser-only (particle/bieu do dong/blur-glow). Dat RENDER_ENGINE=remotion de quay lai duong
+  //    Remotion (chunk GPU) neu can hieu ung cao cap.
   const renderPlan = { scenes, brand: plan.brand, theme: plan.theme };
-  const estFrames = Math.round(scenes.reduce((a, s) => a + (Number(s.sec) || 3), 0) * 30);
-  const maxChunks = Number(process.env.RENDER_CHUNKS) || 3;
-  const chunkCount = Math.max(1, Math.min(maxChunks, Math.floor(estFrames / 200) || 1));
   const finalMp4 = path.join(workDir, `${jobId}.mp4`);
   const listTxt = path.join(workDir, "concat.txt");
+  const ENGINE = process.env.RENDER_ENGINE || "ffmpeg";
 
-  if (GPU_EP && chunkCount > 1) {
+  if (ENGINE === "ffmpeg") {
     t = Date.now();
-    const ids = await Promise.all(
-      Array.from({ length: chunkCount }, (_, i) =>
-        gpuDispatch(GPU_EP, { stage: "render", scenes, brand: plan.brand, theme: plan.theme, jobId, chunkIndex: i, chunkCount })
-      )
-    );
-    const outputs = await Promise.all(ids.map((id) => gpuPoll(GPU_EP, id)));
-    tick("renderGpu", t);
-    t = Date.now();
-    // Lo cua chunk GPU (handler tra {error}) -> surface ngay de chan doan (thay vi "no chunks" chung chung).
-    const errored = outputs.find((o) => o && o.error);
-    if (errored) throw new Error("GPU chunk loi: " + String(errored.error).slice(0, 400));
-    const chunks = outputs.filter((o) => o && o.chunkUrl).sort((a, b) => (a.chunkIndex || 0) - (b.chunkIndex || 0));
-    if (!chunks.length) throw new Error("Khong co chunkUrl. Raw outputs: " + JSON.stringify(outputs).slice(0, 500));
-    const files = [];
-    for (const c of chunks) {
-      const f = path.join(workDir, `chunk-${c.chunkIndex}.mp4`);
-      await downloadTo(c.chunkUrl, f);
-      files.push(f);
-    }
-    await combineChunks(files, listTxt, audioFile, finalMp4);
-    tick("combine", t);
-  } else {
-    // Fallback: render CA video (muted) tai cho + mux audio (CPU-only, khong GPU, hoac video qua ngan).
-    t = Date.now();
-    const silent = await renderVideo(renderPlan, `${jobId}-silent`);
-    await combineChunks([silent], listTxt, audioFile, finalMp4);
+    await renderVideoFFmpeg(renderPlan, audioFile, jobId, workDir, finalMp4);
     tick("render", t);
+  } else {
+    // ── Duong REMOTION (cu): chunk GPU song song (chi dung khi dat RENDER_ENGINE=remotion) ──
+    const GPU_EP = process.env.GPU_RENDER_ENDPOINT_ID;
+    const estFrames = Math.round(scenes.reduce((a, s) => a + (Number(s.sec) || 3), 0) * 30);
+    const maxChunks = Number(process.env.RENDER_CHUNKS) || 3;
+    const chunkCount = Math.max(1, Math.min(maxChunks, Math.floor(estFrames / 200) || 1));
+    if (GPU_EP && chunkCount > 1) {
+      t = Date.now();
+      const ids = await Promise.all(
+        Array.from({ length: chunkCount }, (_, i) =>
+          gpuDispatch(GPU_EP, { stage: "render", scenes, brand: plan.brand, theme: plan.theme, jobId, chunkIndex: i, chunkCount })
+        )
+      );
+      const outputs = await Promise.all(ids.map((id) => gpuPoll(GPU_EP, id)));
+      tick("renderGpu", t);
+      t = Date.now();
+      const errored = outputs.find((o) => o && o.error);
+      if (errored) throw new Error("GPU chunk loi: " + String(errored.error).slice(0, 400));
+      const chunks = outputs.filter((o) => o && o.chunkUrl).sort((a, b) => (a.chunkIndex || 0) - (b.chunkIndex || 0));
+      if (!chunks.length) throw new Error("Khong co chunkUrl. Raw outputs: " + JSON.stringify(outputs).slice(0, 500));
+      const files = [];
+      for (const c of chunks) {
+        const f = path.join(workDir, `chunk-${c.chunkIndex}.mp4`);
+        await downloadTo(c.chunkUrl, f);
+        files.push(f);
+      }
+      await combineChunks(files, listTxt, audioFile, finalMp4);
+      tick("combine", t);
+    } else {
+      t = Date.now();
+      const silent = await renderVideo(renderPlan, `${jobId}-silent`);
+      await combineChunks([silent], listTxt, audioFile, finalMp4);
+      tick("render", t);
+    }
   }
   t = Date.now();
   const videoUrl = await uploadR2(finalMp4, `videos/${jobId}.mp4`);
