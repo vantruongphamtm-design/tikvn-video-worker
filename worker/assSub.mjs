@@ -88,31 +88,31 @@ export function buildSceneAss(scene, opts = {}) {
     `[Script Info]\nScriptType: v4.00+\nPlayResX: ${W}\nPlayResY: ${H}\nWrapStyle: 0\nScaledBorderAndShadow: yes\nYCbCr Matrix: TV.709\n\n` +
     `[V4+ Styles]\n` +
     `Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n` +
-    `Style: Title,${FONT},104,${titleCol},&H000000FF,${outline},&H00000000,1,0,0,0,100,100,0,0,1,5,0,5,90,90,0,1\n` +
-    `Style: Kicker,${FONT},40,${kickCol},&H00000000,${outline},&H00000000,1,0,0,0,100,100,3,0,1,3,0,5,90,90,0,1\n` +
-    `Style: Cap,${FONT},62,${primary},${secondary},${outline},&H64000000,1,0,0,0,100,100,0,0,1,5,1,2,120,120,0,1\n` +
-    `Style: Comp,${FONT},60,${titleCol},&H00000000,${outline},&H00000000,1,0,0,0,100,100,0,0,1,4,0,5,80,80,0,1\n` +
+    `Style: Title,${FONT},120,${titleCol},&H000000FF,${outline},&H00000000,1,0,0,0,100,100,0,0,1,5,0,5,80,80,0,1\n` +
+    `Style: Kicker,${FONT},46,${kickCol},&H00000000,${outline},&H00000000,1,0,0,0,100,100,6,0,1,3,0,5,90,90,0,1\n` +
+    `Style: Cap,${FONT},72,${primary},${secondary},${outline},&H64000000,1,0,0,0,100,100,0,0,1,5,1,2,110,110,0,1\n` +
+    `Style: Comp,${FONT},64,${titleCol},&H00000000,${outline},&H00000000,1,0,0,0,100,100,0,0,1,4,0,5,70,70,0,1\n` +
     `Style: Mono,DejaVu Sans Mono,54,${accBGR},&H00000000,${outline},&H00000000,1,0,0,0,100,100,0,0,1,3,0,5,80,80,0,1\n` +
-    `Style: Brand,${FONT},34,${brandCol},&H00000000,${outline},&H00000000,1,0,0,0,100,100,1,0,1,2,0,2,60,60,60,1\n\n` +
+    `Style: Brand,${FONT},38,${brandCol},&H00000000,${outline},&H00000000,1,0,0,0,100,100,1,0,1,2,0,2,60,60,64,1\n\n` +
     `[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n`;
 
   const lines = [];
 
   // Kicker (nhan nho phia tren) - luon hien khi co.
   if (scene.kicker) {
-    lines.push(`Dialogue: 1,${assTime(0)},${end},Kicker,,0,0,0,,{\\pos(540,552)\\an5\\fad(140,0)}${assText(scene.kicker).toUpperCase()}`);
+    lines.push(`Dialogue: 1,${assTime(0)},${end},Kicker,,0,0,0,,{\\pos(540,690)\\an5\\fad(140,0)}${assText(scene.kicker).toUpperCase()}`);
   }
 
   // KHOI GIUA: component (neu render duoc) HOAC tieu de (co chuyen dong + glow).
-  const compLines = scene.component ? componentDialogues(scene.component, { accent, ink, sub, accBGR, subCol, primary, outline, end }) : null;
+  const compLines = scene.component ? componentDialogues(scene.component, { accent, ink, sub, accBGR, subCol, primary, outline, end, light: opts.light }) : null;
   if (compLines && compLines.length) {
     lines.push(...compLines);
   } else if (scene.title) {
     const ent = titleEntrance(scene.motion);
     // Lop GLOW mau accent (mo, ban trong) DUOI tieu de -> quang sang mem quanh chu.
-    lines.push(`Dialogue: 0,${assTime(0)},${end},Title,,0,0,0,,{\\pos(540,720)\\an5\\1c${accBGR}\\3a&HFF&\\bord0\\blur16\\alpha&H66&${ent}}${assText(scene.title)}`);
+    lines.push(`Dialogue: 0,${assTime(0)},${end},Title,,0,0,0,,{\\pos(540,900)\\an5\\1c${accBGR}\\3a&HFF&\\bord0\\blur20\\alpha&H5A&${ent}}${assText(scene.title)}`);
     // Tieu de sac net tren cung.
-    lines.push(`Dialogue: 2,${assTime(0)},${end},Title,,0,0,0,,{\\pos(540,720)\\an5${ent}}${assText(scene.title)}`);
+    lines.push(`Dialogue: 2,${assTime(0)},${end},Title,,0,0,0,,{\\pos(540,900)\\an5${ent}}${assText(scene.title)}`);
   }
 
   // Karaoke caption: chia CHUNK 4 tu; moi chunk "NAY" (\fscx88->100) + \k per tu.
