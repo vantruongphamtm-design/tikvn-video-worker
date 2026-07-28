@@ -49,7 +49,7 @@ const enc = [
 ];
 
 // Render 1 canh -> seg-i.mp4 (khong tieng). i, scene, F0 (frame bat dau trong ca video), TOTAL (tong frame).
-async function renderScene(scene, i, F0, TOTAL, theme, plan, workDir) {
+async function renderScene(scene, i, F0, TOTAL, theme, plan, workDir, threads = 0) {
   const N = Math.max(1, Math.round((Number(scene.sec) || 3) * FPS));
   const durSec = N / FPS;
   const accent = theme.accents[i % theme.accents.length];
@@ -78,7 +78,7 @@ async function renderScene(scene, i, F0, TOTAL, theme, plan, workDir) {
     try {
       await downloadTo(scene.image, path.join(workDir, imgFile));
     } catch {
-      return renderScene({ ...scene, image: null }, i, F0, TOTAL, theme, plan, workDir);
+      return renderScene({ ...scene, image: null }, i, F0, TOTAL, theme, plan, workDir, threads);
     }
     const denom = Math.max(1, N - 1);
     // cover -> phong to 2x lay do phan giai cho zoompan muot -> Ken Burns 1.05->1.16 -> phu scrim gradient
@@ -100,7 +100,8 @@ async function renderScene(scene, i, F0, TOTAL, theme, plan, workDir) {
   }
 
   const seg = `seg-${i}.mp4`;
-  await run(["-y", ...inputs, "-filter_complex", chain, "-map", "[v]", "-frames:v", String(N), ...enc, seg], workDir);
+  const th = threads > 0 ? ["-threads", String(threads)] : [];
+  await run(["-y", ...inputs, "-filter_complex", chain, "-map", "[v]", "-frames:v", String(N), ...th, ...enc, seg], workDir);
   return path.join(workDir, seg);
 }
 
@@ -143,15 +144,19 @@ export async function renderVideoFFmpeg(plan, audioFile, jobId, workDir, finalMp
     acc += n;
   }
 
-  // Render segment SONG SONG (pool theo core). RENDER_CONCURRENCY tai su dung lam so canh chay cung luc.
-  const pool = Math.max(1, Number(process.env.RENDER_CONCURRENCY) || Math.min(6, os.cpus().length || 4));
+  // Render segment SONG SONG. May nhieu vCPU (vd 32): chay NHIEU canh cung luc, moi ffmpeg
+  // gioi han -threads = cores/pool de KHONG oversubscribe (chay het canh 1 luot ~ thoi gian 1 canh).
+  // RENDER_CONCURRENCY ep so canh song song neu can.
+  const cores = os.cpus().length || 4;
+  const pool = Math.max(1, Number(process.env.RENDER_CONCURRENCY) || Math.min(scenes.length, Math.max(4, Math.min(cores, 16))));
+  const threadsPer = Math.max(2, Math.floor(cores / Math.max(1, Math.min(pool, scenes.length))));
   const segs = new Array(scenes.length);
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.min(pool, scenes.length) }, async () => {
       while (next < scenes.length) {
         const i = next++;
-        segs[i] = await renderScene(scenes[i], i, F0[i], TOTAL, theme, plan, workDir);
+        segs[i] = await renderScene(scenes[i], i, F0[i], TOTAL, theme, plan, workDir, threadsPer);
       }
     })
   );
