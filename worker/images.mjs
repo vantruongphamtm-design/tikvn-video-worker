@@ -17,26 +17,28 @@ export async function searchImage(query, offset = 0) {
   return p.src.large2x || p.src.original || p.src.large || p.src.portrait;
 }
 
-/** Gan anh stock cho tung canh theo scene.imageQuery (fallback: topicWord). */
+/** Gan anh stock cho tung canh theo scene.imageQuery (fallback: topicWord).
+ *  SONG SONG tat ca canh (truoc day tuan tu 8 search -> nay ~1 luot). `used` chi de dedup (race OK). */
 export async function stockForScenes(scenes, topicWord) {
   const used = new Set();
-  for (let i = 0; i < scenes.length; i++) {
-    const q = scenes[i].imageQuery || topicWord || "";
-    if (!q) continue;
-    try {
-      // thu vai offset de tranh trung anh giua cac canh
-      for (let off = 0; off < 4; off++) {
-        const url = await searchImage(q, i + off);
-        if (url && !used.has(url)) {
-          used.add(url);
-          scenes[i].image = url;
-          break;
+  await Promise.all(
+    scenes.map(async (sc, i) => {
+      const q = sc.imageQuery || topicWord || "";
+      if (!q) return;
+      try {
+        for (let off = 0; off < 4; off++) {
+          const url = await searchImage(q, i + off);
+          if (url && !used.has(url)) {
+            used.add(url);
+            sc.image = url;
+            break;
+          }
+          if (url && off === 3) sc.image = url; // chap nhan trung neu het lua chon
         }
-        if (url && off === 3) scenes[i].image = url; // chap nhan trung neu het lua chon
+      } catch {
+        /* bo qua, canh do dung gradient */
       }
-    } catch {
-      /* bo qua, canh do dung gradient */
-    }
-  }
+    })
+  );
   return scenes;
 }
