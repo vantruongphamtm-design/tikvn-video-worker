@@ -29,13 +29,17 @@ async function durationOf(file) {
 // voice: "" -> auto (giong mac dinh); URL -> clone; "instruct:..." -> voice_design.
 // endpoint: mac dinh dung endpoint RIENG cho video "giong doc video ngan" qua RUNPOD_TTS_ENDPOINT_ID
 // (tach khoi endpoint giong cua web). Chua set env thi ve endpoint OmniVoice chung h2t1xhru34n54n.
-async function synthReal(text, voice, outFile, refText) {
+async function synthReal(text, voice, outFile, refText, speed, temperature, style) {
   const endpoint = process.env.RUNPOD_TTS_ENDPOINT_ID || "h2t1xhru34n54n";
   const apiKey = process.env.RUNPOD_API_KEY;
   if (!apiKey) return false;
 
   // num_step 32 khop web (handler mac dinh cung 32 -> vo hai, de ro rang).
   const input = { text, language: "Vietnamese", output_format: "mp3", num_step: 32 };
+  // VieNeu doc cac tham so nay (OmniVoice cu bo qua). Chi gui khi hop le de khong doi hanh vi mac dinh.
+  if (speed && speed > 0 && speed !== 1) input.speed = speed;
+  if (temperature && temperature > 0) input.temperature = temperature;
+  if (style) input.style = style;
   if (voice && /^https?:/.test(voice)) {
     // Tai file tham chieu -> base64. OmniVoice that doc ref_audio_base64 (khop web /api/tts).
     // Gui ref_audio_url thi handler co the BO QUA -> giong ve mac dinh (day la loi "giong sai").
@@ -92,7 +96,8 @@ async function synthMock(text, outFile) {
 // So request TTS chay song song (khop workersMax cua endpoint TTS = 4). Chinh qua env.
 const TTS_CONCURRENCY = Number(process.env.TTS_CONCURRENCY) || 4;
 
-export async function synthAll(scenes, voice, workDir, targetSec, voiceRefText) {
+export async function synthAll(scenes, voice, workDir, targetSec, voiceRefText, opts = {}) {
+  const { speed, temperature, style, silenceP } = opts;
   await mkdir(workDir, { recursive: true });
   // TTS moi canh SONG SONG (pool TTS_CONCURRENCY) thay vi tuan tu -> nhanh hon nhieu.
   // Ket qua giu dung thu tu canh (ghi vao secs[i]).
@@ -102,7 +107,7 @@ export async function synthAll(scenes, voice, workDir, targetSec, voiceRefText) 
     const speak = scenes[i].narration || scenes[i].caption || " ";
     let sec;
     try {
-      const r = await synthReal(speak, voice, f, voiceRefText);
+      const r = await synthReal(speak, voice, f, voiceRefText, speed, temperature, style);
       if (r && r.ok) sec = r.sec ?? (await durationOf(f));
       else sec = await synthMock(speak, f);
     } catch (e) {
@@ -130,7 +135,8 @@ export async function synthAll(scenes, voice, workDir, targetSec, voiceRefText) 
   // KHONG ep du targetSec (de video dai TU NHIEN theo giong doc, vd chon 60s -> 50-60s la OK).
   // Chi chen 1 chut LANG NGHI giua cac canh cho de tho + karaoke kip chuyen canh.
   // Neu tong qua ngan so voi muc tieu (LLM viet thieu) thi nghi dai hon 1 chut (co tran), khong ep het.
-  const GAP_MIN = 0.35;
+  // silenceP (giay nghi giua canh) tu web -> lam GAP co so; thieu thi giu mac dinh 0.35s.
+  const GAP_MIN = (typeof silenceP === "number" && silenceP >= 0) ? silenceP : 0.35;
   let gap = GAP_MIN;
   if (targetSec) {
     const speechTotal = outScenes.reduce((a, s) => a + s.sec, 0);
