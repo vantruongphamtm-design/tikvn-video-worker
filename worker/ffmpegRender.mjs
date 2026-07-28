@@ -42,8 +42,10 @@ async function downloadTo(url, file) {
   await writeFile(file, Buffer.from(await res.arrayBuffer()));
 }
 
+// Chat luong TAI VE: crf 20->18 + preset veryfast->faster -> bitrate ~gap doi (~3.7 -> ~6-7 Mbps),
+// chu/do hoa sac net khi xem full man hinh. Render cham hon chut (buoc render von chi ~3s/10 canh).
 const enc = [
-  "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+  "-r", "30", "-c:v", "libx264", "-preset", "faster", "-crf", "18",
   "-pix_fmt", "yuv420p", "-profile:v", "high",
   "-x264-params", "keyint=60:scenecut=0", "-video_track_timescale", "30000",
 ];
