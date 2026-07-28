@@ -89,10 +89,14 @@ async function renderScene(scene, i, F0, TOTAL, theme, plan, workDir) {
       `zoompan=z='1.05+0.11*on/${denom}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${N}:s=1080x1920:fps=${FPS},setsar=1[bg];` +
       `[bg][1:v]overlay=0:0,${prog},subtitles=${assName},format=yuv420p[v]`;
   } else {
-    // Khong anh -> nen mau theme + vignette (theme toi). Paper (sang) bo vignette.
-    const vig = theme.light ? "" : "vignette=PI/5,";
+    // Khong anh -> nen mau theme + quang sang accent (theme toi) + vignette. Paper (sang) bo ca hai.
     inputs = ["-f", "lavfi", "-i", `color=c=0x${theme.bg}:s=1080x1920:r=${FPS}:d=${durSec.toFixed(3)}`];
-    chain = `[0:v]${vig}${prog},subtitles=${assName},format=yuv420p[v]`;
+    if (theme.light) {
+      chain = `[0:v]${prog},subtitles=${assName},format=yuv420p[v]`;
+    } else {
+      inputs.push("-i", "glow.png");
+      chain = `[0:v]vignette=PI/5[bg];[bg][1:v]overlay=0:0,${prog},subtitles=${assName},format=yuv420p[v]`;
+    }
   }
 
   const seg = `seg-${i}.mp4`;
@@ -115,6 +119,19 @@ export async function renderVideoFFmpeg(plan, audioFile, jobId, workDir, finalMp
     ["-y", "-f", "lavfi", "-i", "color=c=black:s=1080x1920", "-vf", "format=rgba,geq=r=0:g=0:b=0:a='18+180*Y/H'", "-frames:v", "1", "scrim.png"],
     workDir
   );
+
+  // Quang sang accent (goc tren, mem) cho canh KHONG anh + theme toi. Nuong 1 PNG bang geq (dung mau accent chinh).
+  const ga = theme.accents[0];
+  if (!theme.light) {
+    await run(
+      [
+        "-y", "-f", "lavfi", "-i", "color=c=black:s=1080x1920",
+        "-vf", `format=rgba,geq=r=0x${ga.slice(0, 2)}:g=0x${ga.slice(2, 4)}:b=0x${ga.slice(4, 6)}:a='clip(72*exp(-(pow((X-780)/470,2)+pow((Y-250)/400,2))),0,72)'`,
+        "-frames:v", "1", "glow.png",
+      ],
+      workDir
+    );
+  }
 
   // Frame bat dau + tong frame (khop cach TTS tinh do dai).
   const Ns = scenes.map((s) => Math.max(1, Math.round((Number(s.sec) || 3) * FPS)));
