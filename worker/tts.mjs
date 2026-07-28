@@ -136,14 +136,16 @@ export async function synthAll(scenes, voice, workDir, targetSec, voiceRefText, 
   // Chi chen 1 chut LANG NGHI giua cac canh cho de tho + karaoke kip chuyen canh.
   // Neu tong qua ngan so voi muc tieu (LLM viet thieu) thi nghi dai hon 1 chut (co tran), khong ep het.
   // silenceP (giay nghi giua canh) tu web -> lam GAP co so; thieu thi giu mac dinh 0.35s.
-  const GAP_MIN = (typeof silenceP === "number" && silenceP >= 0) ? silenceP : 0.35;
+  // Khoang nghi giua canh: MAC DINH NHO de giong LIEN MACH (0.18s). silence_p tu web quyet dinh.
+  // KHONG gian rong de ep dat targetSec (gian rong = giong khung/ngat quang). Chi gian RAT NHE (+0.2s)
+  // khi qua ngan; video cu ngan tu nhien theo giong con hon la chen im lang dai.
+  const GAP_MIN = (typeof silenceP === "number" && silenceP >= 0) ? silenceP : 0.18;
   let gap = GAP_MIN;
   if (targetSec) {
     const speechTotal = outScenes.reduce((a, s) => a + s.sec, 0);
-    const floor = targetSec * 0.82; // cho phep ngan hon muc tieu (vd 60s -> >= ~49s)
+    const floor = targetSec * 0.7;
     if (speechTotal + GAP_MIN * outScenes.length < floor) {
-      // thieu nhieu -> nghi dai hon de dat SAN (floor), toi da 1.2s/canh (khong ep tran target)
-      gap = Math.min(1.2, (floor - speechTotal) / outScenes.length);
+      gap = Math.min(GAP_MIN + 0.2, (floor - speechTotal) / outScenes.length);
     }
   }
   gap = Math.round(gap * 100) / 100;
